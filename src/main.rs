@@ -360,12 +360,12 @@ fn ui(f: &mut Frame, app: &mut App) {
         .split(chunks[1]);
 
     // Timeline list
+    let selected_idx = app.selected_index();
     let items: Vec<ListItem> = app
         .entries
         .iter()
         .enumerate()
         .map(|(i, entry)| {
-            let selected_idx = app.selected_index();
             let is_selected = i == selected_idx;
             let style = if is_selected {
                 Style::default().bg(Color::DarkGray).fg(Color::Yellow).add_modifier(Modifier::BOLD)
