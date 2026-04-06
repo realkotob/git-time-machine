@@ -82,40 +82,85 @@ git-time-machine --all
 
 ## 🔥 Use Cases
 
-### Scenario 1: Accidental Reset
+### Scenario 1: "I Don't Know What I Did, But It's Broken"
 ```bash
-# Oh no! You did this:
-git reset --hard HEAD~5
+# You ran a bunch of git commands, something broke
+# You don't remember the exact sequence
+# git reflog shows 50+ cryptic entries
 
-# No problem:
+# With git-time-machine:
 git-time-machine
-# Navigate to "6m ago", press Enter
-# All commits restored ✨
+# Visually scan the timeline
+# See "2h ago - before I started messing around"
+# Press Enter, back to working state ✨
 ```
 
-### Scenario 2: Deleted Branch
-```bash
-# Deleted the wrong branch
-git branch -D feature-branch
+**Why not `git reflog`?** You'd need to:
+1. Read through cryptic hashes and messages
+2. Guess which one is "before you broke it"
+3. Manually `git reset --hard <hash>`
+4. Hope you picked the right one
+5. Repeat if wrong
 
-# Recover it:
+### Scenario 2: Recovering Lost Work After Complex Operations
+```bash
+# You did: rebase, merge, reset, amend, rebase again
+# Now you need code from 3 operations ago
+# But you don't remember the exact hash
+
+# With git-time-machine:
 git-time-machine
-# Find the last commit on that branch
-# Press Enter, then:
-git checkout -b feature-branch
+# Scroll through visual timeline
+# See relative timestamps: "15m ago", "1h ago"
+# Find the state you need
+# Press Enter to restore
 ```
 
-### Scenario 3: Bad Rebase
-```bash
-# Rebase went wrong
-git rebase main
-# Conflicts everywhere...
+**Why not `git reflog | grep`?** You'd need to:
+1. Know what to grep for
+2. Parse timestamps manually
+3. Cross-reference multiple entries
+4. Still guess which hash is correct
 
-# Undo it:
-git-time-machine
-# Go back to before rebase
-# Press Enter, start over
+### Scenario 3: Deleted Branch (Already Garbage Collected Locally)
+```bash
+# Deleted a branch 2 weeks ago
+# Need it back but don't remember the commit hash
+# git branch -D feature-branch was weeks ago
+
+# With git-time-machine:
+git-time-machine --all
+# Scroll back through weeks of history
+# Find "checkout: moving from feature-branch"
+# See the commit hash right there
+# Press Enter, then: git checkout -b feature-branch
 ```
+
+**Why not `git reflog --all`?** You'd need to:
+1. Scroll through hundreds of lines of text
+2. Find the right branch name in the noise
+3. Extract the hash manually
+4. Remember the git commands to restore it
+
+### Scenario 4: "Undo" After You've Already Committed
+```bash
+# You committed to the wrong branch
+# Then made 3 more commits
+# Then realized the mistake
+# git revert won't help - you need to go back in time
+
+# With git-time-machine:
+git-time-machine
+# Find "before I committed to wrong branch"
+# Press Enter
+# Cherry-pick the commits to the right branch
+```
+
+**Why not `git reset`?** You'd need to:
+1. Count how many commits back
+2. Remember if it's `--soft`, `--mixed`, or `--hard`
+3. Hope you counted right
+4. Manually re-apply commits if you messed up
 
 ## 🛠️ How It Works
 
@@ -127,6 +172,25 @@ git-time-machine
 4. Executes `git reset --hard <hash>` when you press Enter
 
 **It's just git under the hood** - no magic, no risk.
+
+## 🤔 Why Not Just Use Git Commands?
+
+**You absolutely can!** But here's the reality:
+
+| Task | With git commands | With git-time-machine |
+|------|------------------|---------------------|
+| Find state from "before I broke it" | `git reflog`, scan 50+ lines, guess hash, `git reset --hard <hash>`, hope it's right | Scroll, press Enter |
+| Recover deleted branch from 2 weeks ago | `git reflog --all \| grep branch-name`, find hash, `git checkout -b`, verify | `--all` flag, scroll, press Enter |
+| Undo complex operation sequence | Remember exact commands, count commits, pick right reset flag | Visual timeline, click the "before" state |
+| Explore "what if" scenarios | Multiple `git reset` attempts, risk losing more work | Navigate freely, restore is one keypress |
+
+**git-time-machine doesn't replace git** - it makes reflog actually usable for humans who:
+- Don't memorize commit hashes
+- Don't want to grep through 200 lines of text
+- Want to see their history visually
+- Need to undo mistakes quickly without googling
+
+Think of it as `git reflog` with a UI that doesn't require a PhD.
 
 ## 🤝 Contributing
 
