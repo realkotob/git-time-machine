@@ -1,12 +1,14 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use std::process::Command;
+use serde::Serialize;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct GitEntry {
     pub hash: String,
     pub message: String,
     pub timestamp: DateTime<Utc>,
+    pub author: String,
     pub relative_time: String,
 }
 
@@ -40,7 +42,7 @@ impl GitManager {
             .current_dir(&self.repo_path)
             .args([
                 "reflog",
-                "--format=%H%x00%s%x00%ct",
+                "--format=%H%x00%s%x00%ct%x00%an",
                 &format!("-n{}", limit),
             ])
             .output()
@@ -54,11 +56,12 @@ impl GitManager {
         let mut entries = Vec::new();
 
         for line in reflog_output.lines() {
-            let parts: Vec<&str> = line.splitn(3, '\x00').collect();
-            if parts.len() >= 3 {
+            let parts: Vec<&str> = line.splitn(4, '\x00').collect();
+            if parts.len() >= 4 {
                 let hash = parts[0].to_string();
                 let message = parts[1].to_string();
                 let timestamp_str = parts[2];
+                let author = parts[3].to_string();
 
                 if let Ok(timestamp_secs) = timestamp_str.parse::<i64>() {
                     let timestamp = DateTime::from_timestamp(timestamp_secs, 0)
@@ -69,6 +72,7 @@ impl GitManager {
                         hash,
                         message,
                         timestamp,
+                        author,
                         relative_time,
                     });
                 }
@@ -133,6 +137,30 @@ impl GitManager {
         let diff_output = String::from_utf8(output.stdout)?;
         if diff_output.trim().is_empty() {
             Ok("No changes between current HEAD and selected commit.".to_string())
+        } else {
+            Ok(diff_output)
+        }
+    }
+
+    pub fn get_full_diff(&self, commit_hash: &str) -> Result<String> {
+        if !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Ok("Invalid commit hash format".to_string());
+        }
+
+        let output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args(["show", "--no-color", commit_hash])
+            .output()
+            .context("Failed to get full diff")?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            return Ok(format!("Error getting diff: {}", error));
+        }
+
+        let diff_output = String::from_utf8(output.stdout)?;
+        if diff_output.trim().is_empty() {
+            Ok("No diff available.".to_string())
         } else {
             Ok(diff_output)
         }
