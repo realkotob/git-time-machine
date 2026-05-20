@@ -1,6 +1,6 @@
 [package]
 name = "git-time-machine"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 authors = ["Dinakar Sarbada <dinakars777@gmail.com>"]
 description = "🕰️ A visual TUI for browsing Git reflog and restoring reachable local history"

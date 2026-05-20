@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## [0.4.0] - 2026-05-20
+
 ### Added
 - Real Git repository regression tests for reflog parsing, dirty-worktree detection, diff previews, and invalid hash handling.
 - CI checks for `cargo fmt --check` and `cargo clippy -- -D warnings`.
@@ -13,7 +15,7 @@
 
 ### Changed
 - Tightened README, CLI, crate, and landing-page language around what reflog-based recovery can and cannot do.
-- Synced documented controls and feature lists with the current `0.3.0` behavior.
+- Synced documented controls and feature lists with the current `0.4.0` behavior.
 - Full diff preview now compares `HEAD` to the selected target, matching restore preview semantics.
 
 ## [0.3.0] - 2026-04-10
