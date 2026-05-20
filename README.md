@@ -56,6 +56,9 @@ git-time-machine --all
 
 # Export the current reflog view as JSON
 git-time-machine --export-json
+
+# List hard-reset backup refs and recovery commands
+git-time-machine --list-backups
 ```
 
 ### Controls
@@ -83,6 +86,7 @@ git-time-machine --export-json
 - ✅ **Relative Timestamps** - "5m ago", "2h ago", "yesterday"
 - ✅ **Diff Preview** - Compare the selected entry before restoring
 - ✅ **Safer Restore Modes** - Choose hard reset, soft reset, or detached checkout
+- ✅ **Backup Ref Recovery** - List backup refs and exact recovery commands
 - ✅ **Search/Filter** - Filter commit messages with multi-word search
 - ✅ **JSON Export** - Export the reflog timeline for automation
 - ✅ **Vim Keybindings** - j/k and gg/G navigation
@@ -194,6 +198,15 @@ git-time-machine
 5. Runs one of: `git reset --hard <hash>`, `git reset --soft <hash>`, or `git checkout <hash>` (detached HEAD)
 
 **It's just Git under the hood** - useful, but not magic. Hard reset is destructive, so git-time-machine creates a backup ref under `refs/git-time-machine/backups/` before running it.
+
+To find those backup refs later:
+
+```bash
+git-time-machine --list-backups
+```
+
+The command prints each backup ref, the commit it points to, and exact `git show`
+and `git reset --hard` commands for manual inspection and recovery.
 
 ## 🤔 Why Not Just Use Git Commands?
 

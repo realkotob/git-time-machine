@@ -103,7 +103,8 @@
                         <li>Run <code>git-time-machine</code></li>
                         <li>Scroll through visual timeline</li>
                         <li>Preview the diff</li>
-                        <li>Press Enter after confirming</li>
+                        <li>Choose hard reset, soft reset, or detached checkout</li>
+                        <li>List backup refs later if you used hard reset</li>
                     </ol>
                     <p class="time">Visual and deliberate</p>
                 </div>
@@ -130,6 +131,11 @@
                     <div class="feature-icon">⚡</div>
                     <h3>Diff Preview</h3>
                     <p>Inspect the selected state before restoring</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🛟</div>
+                    <h3>Backup Ref Recovery</h3>
+                    <p>List hard-reset backup refs and exact recovery commands</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">⌨️</div>
@@ -221,7 +227,7 @@
             <div class="usage-section">
                 <h3>Usage</h3>
                 <div class="code-block large">
-                    <code># Launch in any git repository<br>git-time-machine<br><br># Show up to 1000 reflog entries (default: last 50)<br>git-time-machine --all<br><br># Export reflog entries as JSON<br>git-time-machine --export-json</code>
+                    <code># Launch in any git repository<br>git-time-machine<br><br># Show up to 1000 reflog entries (default: last 50)<br>git-time-machine --all<br><br># Export reflog entries as JSON<br>git-time-machine --export-json<br><br># List hard-reset backup refs and recovery commands<br>git-time-machine --list-backups</code>
                 </div>
                 
                 <h3>Controls</h3>

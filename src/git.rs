@@ -16,6 +16,29 @@ pub struct GitManager {
     repo_path: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct BackupRef {
+    pub name: String,
+    pub hash: String,
+    pub subject: String,
+    pub created_at: Option<DateTime<Utc>>,
+    pub relative_time: String,
+}
+
+impl BackupRef {
+    pub fn short_hash(&self) -> String {
+        self.hash.chars().take(7).collect()
+    }
+
+    pub fn inspect_command(&self) -> String {
+        format!("git show --stat --oneline {}", self.name)
+    }
+
+    pub fn restore_command(&self) -> String {
+        format!("git reset --hard {}", self.name)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestoreMode {
     HardReset,
@@ -109,6 +132,57 @@ impl GitManager {
         }
 
         Ok(entries)
+    }
+
+    pub fn list_backup_refs(&self) -> Result<Vec<BackupRef>> {
+        let output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args([
+                "for-each-ref",
+                "refs/git-time-machine/backups",
+                "--format=%(refname)%00%(objectname)%00%(subject)",
+            ])
+            .output()
+            .context("Failed to list git-time-machine backup refs")?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to list git-time-machine backup refs: {}", error);
+        }
+
+        let refs_output = String::from_utf8(output.stdout)?;
+        let mut backup_refs = Vec::new();
+        for line in refs_output.lines() {
+            let parts: Vec<&str> = line.splitn(3, '\x00').collect();
+            if parts.len() < 3 {
+                continue;
+            }
+
+            let name = parts[0].to_string();
+            let hash = parts[1].to_string();
+            let subject = parts[2].to_string();
+            let created_at = Self::backup_ref_created_at(&name);
+            let relative_time = created_at
+                .as_ref()
+                .map(Self::format_relative_time)
+                .unwrap_or_else(|| "unknown".to_string());
+
+            backup_refs.push(BackupRef {
+                name,
+                hash,
+                subject,
+                created_at,
+                relative_time,
+            });
+        }
+
+        backup_refs.sort_by(|a, b| {
+            b.created_at
+                .cmp(&a.created_at)
+                .then_with(|| b.name.cmp(&a.name))
+        });
+
+        Ok(backup_refs)
     }
 
     pub fn restore_to_commit(
@@ -247,6 +321,13 @@ impl GitManager {
         }
 
         Ok(backup_ref)
+    }
+
+    fn backup_ref_created_at(ref_name: &str) -> Option<DateTime<Utc>> {
+        let backup_name = ref_name.strip_prefix("refs/git-time-machine/backups/")?;
+        let (timestamp_millis, _) = backup_name.split_once('-')?;
+        let timestamp_millis = timestamp_millis.parse::<i64>().ok()?;
+        DateTime::from_timestamp_millis(timestamp_millis)
     }
 
     fn format_relative_time(timestamp: &DateTime<Utc>) -> String {
@@ -450,6 +531,40 @@ mod tests {
             fs::read_to_string(repo.path.join("file.txt"))
                 .expect("file should exist after hard reset"),
             "first\n"
+        );
+    }
+
+    #[test]
+    fn list_backup_refs_returns_recovery_commands_for_hard_reset_backups() {
+        let repo = TestRepo::new("list-backups");
+        repo.write_file("first\n");
+        let first_hash = repo.commit("first commit");
+        repo.write_file("second\n");
+        let second_hash = repo.commit("second commit");
+
+        let outcome = repo
+            .manager()
+            .restore_to_commit(&first_hash, RestoreMode::HardReset)
+            .expect("hard reset should restore");
+
+        let backups = repo
+            .manager()
+            .list_backup_refs()
+            .expect("backup refs should load");
+
+        assert_eq!(backups.len(), 1);
+        assert_eq!(backups[0].name, outcome.backup_ref.unwrap());
+        assert_eq!(backups[0].hash, second_hash);
+        assert_eq!(backups[0].short_hash(), second_hash[..7]);
+        assert!(backups[0].subject.contains("second commit"));
+        assert!(backups[0].created_at.is_some());
+        assert_eq!(
+            backups[0].inspect_command(),
+            format!("git show --stat --oneline {}", backups[0].name)
+        );
+        assert_eq!(
+            backups[0].restore_command(),
+            format!("git reset --hard {}", backups[0].name)
         );
     }
 

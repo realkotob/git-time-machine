@@ -27,6 +27,7 @@ Recent work established the foundation for safer iteration:
 - CI runs `cargo fmt --check`, `cargo clippy -- -D warnings`, and tests.
 - Restore now supports hard reset, soft reset, and detached checkout modes.
 - Hard reset creates a backup ref under `refs/git-time-machine/backups/`.
+- Backup refs can be listed with exact inspect and restore commands.
 - The confirmation dialog shows the exact Git command before a restore.
 - Full diff preview now compares `HEAD` to the selected target, matching restore
   semantics.
@@ -35,16 +36,14 @@ Recent work established the foundation for safer iteration:
 
 These are the next practical improvements, ordered by risk and user value.
 
-### Backup ref UX
+### Backup ref management
 
-Hard reset now creates backup refs, but users still need to know how to inspect
-and use them. Add a small workflow to list, inspect, restore from, and eventually
-prune refs under `refs/git-time-machine/backups/`.
+Hard reset backup refs can now be listed with recovery commands. Future work can
+make them easier to restore from or prune inside the TUI.
 
 Acceptance criteria:
-- A user can find the last backup ref without memorizing the ref path.
-- The UI or docs show the exact Git command needed to recover from a backup ref.
-- Tests cover backup-ref naming and lookup behavior.
+- A user can restore from a selected backup ref without copying the ref path.
+- Backup prune behavior is explicit, confirmed, and test-covered.
 
 ### Copy selected commit hash
 

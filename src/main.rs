@@ -17,7 +17,7 @@ use ratatui::{
 use std::io;
 
 mod git;
-use git::{GitEntry, GitManager, RestoreMode};
+use git::{BackupRef, GitEntry, GitManager, RestoreMode};
 
 #[derive(Parser)]
 #[command(name = "git-time-machine")]
@@ -25,7 +25,8 @@ use git::{GitEntry, GitManager, RestoreMode};
 #[command(after_help = "EXAMPLES:\n  \
     git-time-machine              # Show last 50 reflog entries\n  \
     git-time-machine --all        # Show up to 1000 reflog entries\n  \
-    git-time-machine --export-json # Export as JSON for automation\n\n\
+    git-time-machine --export-json # Export reflog as JSON for automation\n  \
+    git-time-machine --list-backups # List hard-reset backup refs\n\n\
 CONTROLS:\n  \
     ↑/k, ↓/j    Navigate up/down\n  \
     Home/End    Jump to first/last entry\n  \
@@ -51,8 +52,12 @@ struct Cli {
     all: bool,
 
     /// Export reflog timeline as JSON
-    #[arg(long)]
+    #[arg(long, conflicts_with = "list_backups")]
     export_json: bool,
+
+    /// List hard-reset backup refs and recovery commands
+    #[arg(long, conflicts_with = "export_json")]
+    list_backups: bool,
 }
 
 struct App {
@@ -308,6 +313,13 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    if cli.list_backups {
+        let git_manager = GitManager::new()?;
+        let backups = git_manager.list_backup_refs()?;
+        print_backup_refs(&backups);
+        return Ok(());
+    }
+
     // Setup panic hook to restore terminal
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -350,6 +362,29 @@ fn main() -> Result<()> {
             println!("Error: {:?}", err);
             Err(err)
         }
+    }
+}
+
+fn print_backup_refs(backups: &[BackupRef]) {
+    if backups.is_empty() {
+        println!("No git-time-machine backup refs found.");
+        println!("Hard reset creates refs under refs/git-time-machine/backups/.");
+        return;
+    }
+
+    println!("Backup refs (newest first):");
+    for backup in backups {
+        println!(
+            "{}  {}  {}",
+            backup.relative_time,
+            backup.short_hash(),
+            backup.name
+        );
+        if !backup.subject.is_empty() {
+            println!("    commit: {}", backup.subject);
+        }
+        println!("    inspect: {}", backup.inspect_command());
+        println!("    restore: {}", backup.restore_command());
     }
 }
 
