@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>git-time-machine - Undo ANY git mistake in 3 seconds</title>
-    <meta name="description" content="Visual git reflog TUI. Never lose work again. Navigate your git history like a time traveler with vim keybindings.">
+    <title>git-time-machine - Visual Git reflog recovery TUI</title>
+    <meta name="description" content="Visual Git reflog TUI for browsing reachable local history, previewing changes, and restoring deliberately.">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -13,8 +13,8 @@
         <div class="container">
             <div class="hero-emoji">🕰️</div>
             <h1>git-time-machine</h1>
-            <p class="tagline">Undo git mistakes in 3 seconds</p>
-            <p class="subtitle">Visual git reflog that makes sense.</p>
+            <p class="tagline">Browse Git reflog visually</p>
+            <p class="subtitle">Preview reachable local history before you restore.</p>
             
             <div class="cta-buttons">
                 <button class="btn-primary" onclick="copyCommand()">
@@ -28,7 +28,7 @@
             
             <div class="demo-container">
                 <img src="demo.gif" alt="git-time-machine demo" class="demo-gif">
-                <p class="demo-caption">Navigate your git history like a time traveler. One key to restore.</p>
+                <p class="demo-caption">Navigate local reflog entries, preview changes, and restore deliberately.</p>
             </div>
         </div>
     </section>
@@ -36,27 +36,27 @@
     <!-- Problem Section -->
     <section class="problem">
         <div class="container">
-            <h2>You just broke everything</h2>
+            <h2>You need to recover a known-good state</h2>
             <div class="problem-grid">
                 <div class="problem-card">
                     <div class="problem-icon">🔥</div>
-                    <h3>Force pushed</h3>
-                    <p>Lost commits you needed</p>
+                    <h3>Moved HEAD</h3>
+                    <p>Need the previous local state</p>
                 </div>
                 <div class="problem-card">
                     <div class="problem-icon">💥</div>
                     <h3>git reset --hard</h3>
-                    <p>By accident, of course</p>
+                    <p>And need to inspect what came before</p>
                 </div>
                 <div class="problem-card">
                     <div class="problem-icon">🗑️</div>
                     <h3>Deleted a branch</h3>
-                    <p>The one you actually needed</p>
+                    <p>Need the last reachable tip</p>
                 </div>
                 <div class="problem-card">
                     <div class="problem-icon">🤦</div>
                     <h3>Rebased wrong</h3>
-                    <p>Everything is broken now</p>
+                    <p>Need to compare recovery points</p>
                 </div>
             </div>
             
@@ -74,7 +74,7 @@
                     </div>
                     <div class="terminal-line">$ # Which hash do I need? 🤷</div>
                 </div>
-                <p class="pain-point">Dig through cryptic hashes, guess which one is right, pray it works.</p>
+                <p class="pain-point">Read through reflog text, compare hashes manually, and make sure the target is still available locally.</p>
             </div>
         </div>
     </section>
@@ -82,7 +82,7 @@
     <!-- Solution Section -->
     <section class="solution">
         <div class="container">
-            <h2>Better: git-time-machine 🎯</h2>
+            <h2>Better: git-time-machine</h2>
             
             <div class="comparison">
                 <div class="comparison-card bad">
@@ -94,7 +94,7 @@
                         <li>Hope you picked the right one</li>
                         <li>Repeat if wrong</li>
                     </ol>
-                    <p class="time">⏱️ 5-10 minutes + stress</p>
+                    <p class="time">Manual and easy to misread</p>
                 </div>
                 
                 <div class="comparison-card good">
@@ -102,9 +102,10 @@
                     <ol>
                         <li>Run <code>git-time-machine</code></li>
                         <li>Scroll through visual timeline</li>
-                        <li>Press Enter</li>
+                        <li>Preview the diff</li>
+                        <li>Press Enter after confirming</li>
                     </ol>
-                    <p class="time">⏱️ 3 seconds</p>
+                    <p class="time">Visual and deliberate</p>
                 </div>
             </div>
         </div>
@@ -118,7 +119,7 @@
                 <div class="feature-card">
                     <div class="feature-icon">📊</div>
                     <h3>Visual Timeline</h3>
-                    <p>See your git history at a glance</p>
+                    <p>See recent reflog entries at a glance</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">⏰</div>
@@ -127,13 +128,13 @@
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">⚡</div>
-                    <h3>One-Key Restore</h3>
-                    <p>Press Enter, done. No copying hashes, no commands</p>
+                    <h3>Diff Preview</h3>
+                    <p>Inspect the selected state before restoring</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">⌨️</div>
-                    <h3>Vim Keybindings</h3>
-                    <p>j/k navigation for the keyboard warriors</p>
+                    <h3>Search and JSON</h3>
+                    <p>Filter reflog messages or export entries for automation</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">🎨</div>
@@ -220,7 +221,7 @@
             <div class="usage-section">
                 <h3>Usage</h3>
                 <div class="code-block large">
-                    <code># Launch in any git repository<br>git-time-machine<br><br># Show all reflog entries (default: last 50)<br>git-time-machine --all</code>
+                    <code># Launch in any git repository<br>git-time-machine<br><br># Show up to 1000 reflog entries (default: last 50)<br>git-time-machine --all<br><br># Export reflog entries as JSON<br>git-time-machine --export-json</code>
                 </div>
                 
                 <h3>Controls</h3>
@@ -242,7 +243,7 @@
                         </tr>
                         <tr>
                             <td><kbd>Enter</kbd></td>
-                            <td>Restore to selected state</td>
+                            <td>Confirm restore to selected state</td>
                         </tr>
                         <tr>
                             <td><kbd>q</kbd> / <kbd>Esc</kbd></td>
@@ -257,8 +258,8 @@
     <!-- CTA Section -->
     <section class="cta">
         <div class="container">
-            <h2>Stop losing work</h2>
-            <p class="cta-subtext">Just git under the hood.</p>
+            <h2>Stop guessing at reflog hashes</h2>
+            <p class="cta-subtext">Just Git under the hood, with a visual recovery workflow.</p>
             <div class="cta-buttons">
                 <button class="btn-primary large" onclick="copyCommand()">
                     <span class="btn-text">cargo install git-time-machine</span>

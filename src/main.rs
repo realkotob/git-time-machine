@@ -1,5 +1,5 @@
 use anyhow::Result;
-use serde_json;
+use chrono::Local;
 use clap::Parser;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
@@ -14,7 +14,6 @@ use ratatui::{
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
-use chrono::Local;
 use std::io;
 
 mod git;
@@ -22,10 +21,10 @@ use git::{GitEntry, GitManager};
 
 #[derive(Parser)]
 #[command(name = "git-time-machine")]
-#[command(about = "🕰️  Undo DISASTROUS git mistakes in 3 seconds", long_about = None)]
+#[command(about = "🕰️  Browse Git reflog and restore reachable local history", long_about = None)]
 #[command(after_help = "EXAMPLES:\n  \
     git-time-machine              # Show last 50 reflog entries\n  \
-    git-time-machine --all        # Show all reflog entries\n  \
+    git-time-machine --all        # Show up to 1000 reflog entries\n  \
     git-time-machine --export-json # Export as JSON for automation\n\n\
 CONTROLS:\n  \
     ↑/k, ↓/j    Navigate up/down\n  \
@@ -45,7 +44,7 @@ SEARCH MODE:\n  \
     Esc         Cancel search and clear filter\n  \
     Backspace   Delete last character")]
 struct Cli {
-    /// Show all reflog entries (max 1000, default: last 50)
+    /// Show up to 1000 reflog entries (default: last 50)
     #[arg(short, long)]
     all: bool,
 
@@ -79,7 +78,7 @@ impl App {
         let git_manager = GitManager::new()?;
         let entries = git_manager.get_reflog_entries(show_all)?;
         let has_uncommitted_changes = git_manager.has_uncommitted_changes()?;
-        
+
         let mut list_state = ListState::default();
         if !entries.is_empty() {
             list_state.select(Some(0));
@@ -139,7 +138,8 @@ impl App {
         } else {
             let sel = self.list_state.selected().unwrap_or(0);
             if sel >= self.filtered_entries.len() {
-                self.list_state.select(Some(self.filtered_entries.len() - 1));
+                self.list_state
+                    .select(Some(self.filtered_entries.len() - 1));
             } else if self.list_state.selected().is_none() {
                 self.list_state.select(Some(0));
             }
@@ -280,7 +280,7 @@ impl App {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    
+
     if cli.export_json {
         let git_manager = GitManager::new()?;
         let entries = git_manager.get_reflog_entries(cli.all)?;
@@ -295,7 +295,7 @@ fn main() -> Result<()> {
         let _ = execute!(io::stdout(), LeaveAlternateScreen);
         original_hook(panic_info);
     }));
-    
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -497,24 +497,33 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Header with warning if uncommitted changes
     let header_text = if app.has_uncommitted_changes {
-        vec![
-            Line::from(vec![
-                Span::styled("⚠️  ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::styled("UNCOMMITTED CHANGES WILL BE LOST", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::raw("  |  "),
-                Span::styled("Navigate: ↑↓/jk", Style::default().fg(Color::Gray)),
-                Span::raw("  |  "),
-                Span::styled("Diff: Space", Style::default().fg(Color::Cyan)),
-                Span::raw("  |  "),
-                Span::styled("Restore: Enter", Style::default().fg(Color::Green)),
-                Span::raw("  |  "),
-                Span::styled("Quit: q", Style::default().fg(Color::Red)),
-            ])
-        ]
+        vec![Line::from(vec![
+            Span::styled(
+                "⚠️  ",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "UNCOMMITTED CHANGES WILL BE LOST",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw("  |  "),
+            Span::styled("Navigate: ↑↓/jk", Style::default().fg(Color::Gray)),
+            Span::raw("  |  "),
+            Span::styled("Diff: Space", Style::default().fg(Color::Cyan)),
+            Span::raw("  |  "),
+            Span::styled("Restore: Enter", Style::default().fg(Color::Green)),
+            Span::raw("  |  "),
+            Span::styled("Quit: q", Style::default().fg(Color::Red)),
+        ])]
     } else {
         vec![Line::from(vec![
             Span::styled("🕰️  ", Style::default().fg(Color::Cyan)),
-            Span::styled("Git Time Machine", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "Git Time Machine",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::raw("  |  "),
             Span::styled("Navigate: ↑↓/jk", Style::default().fg(Color::Gray)),
             Span::raw("  |  "),
@@ -526,13 +535,13 @@ fn ui(f: &mut Frame, app: &mut App) {
         ])]
     };
 
-    let header = Paragraph::new(header_text)
-        .block(Block::default().borders(Borders::ALL).border_style(
+    let header =
+        Paragraph::new(header_text).block(Block::default().borders(Borders::ALL).border_style(
             if app.has_uncommitted_changes {
                 Style::default().fg(Color::Red)
             } else {
                 Style::default().fg(Color::Cyan)
-            }
+            },
         ));
     f.render_widget(header, chunks[0]);
 
@@ -562,14 +571,19 @@ fn ui(f: &mut Frame, app: &mut App) {
             let entry = app.entries.get(entry_idx)?;
             let is_selected = i == selected_idx;
             let style = if is_selected {
-                Style::default().bg(Color::DarkGray).fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::White)
             };
 
             let prefix = if is_selected { "▶ " } else { "  " };
             let time_style = if is_selected {
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(Color::DarkGray)
             };
@@ -578,7 +592,11 @@ fn ui(f: &mut Frame, app: &mut App) {
                 Span::styled(prefix, style),
                 Span::styled(
                     if app.show_absolute_time {
-                        entry.timestamp.with_timezone(&Local).format("%Y-%m-%d %H:%M:%S").to_string()
+                        entry
+                            .timestamp
+                            .with_timezone(&Local)
+                            .format("%Y-%m-%d %H:%M:%S")
+                            .to_string()
                     } else {
                         entry.relative_time.clone()
                     },
@@ -706,44 +724,58 @@ fn ui(f: &mut Frame, app: &mut App) {
 
     // Footer with preview or confirmation dialog
     if app.show_confirmation {
-        let confirm_text = if let Some(entry) = app
-            .selected_entry_idx()
-            .and_then(|i| app.entries.get(i))
-        {
-            if app.has_uncommitted_changes {
-                format!(
+        let confirm_text =
+            if let Some(entry) = app.selected_entry_idx().and_then(|i| app.entries.get(i)) {
+                if app.has_uncommitted_changes {
+                    format!(
                     "⚠️  CONFIRM: Reset to {} - {}? This will discard uncommitted changes! [y/N]",
                     &entry.hash[..7], entry.message
                 )
+                } else {
+                    format!(
+                        "⚠️  CONFIRM: Reset to {} - {}? [y/N]",
+                        &entry.hash[..7],
+                        entry.message
+                    )
+                }
             } else {
-                format!(
-                    "⚠️  CONFIRM: Reset to {} - {}? [y/N]",
-                    &entry.hash[..7], entry.message
-                )
-            }
-        } else {
-            "No entry selected".to_string()
-        };
+                "No entry selected".to_string()
+            };
 
         let footer = Paragraph::new(confirm_text)
             .style(Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Red)));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Red)),
+            );
         f.render_widget(footer, chunks[2]);
     } else if app.search_mode {
         let match_count = app.filtered_entries.len();
         let footer_line = Line::from(vec![
             Span::styled("🔍 Search: ", Style::default().fg(Color::Cyan)),
-            Span::styled(app.search_query.clone(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                app.search_query.clone(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("█", Style::default().fg(Color::Yellow)),
             Span::raw(" "),
-            Span::styled(format!("({} matches)", match_count), Style::default().fg(Color::Gray)),
+            Span::styled(
+                format!("({} matches)", match_count),
+                Style::default().fg(Color::Gray),
+            ),
             Span::raw("  |  "),
             Span::styled("Enter: apply", Style::default().fg(Color::Green)),
             Span::raw("  |  "),
             Span::styled("Esc: cancel", Style::default().fg(Color::Red)),
         ]);
-        let footer = Paragraph::new(footer_line)
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Yellow)));
+        let footer = Paragraph::new(footer_line).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(Color::Yellow)),
+        );
         f.render_widget(footer, chunks[2]);
     } else if app.search_active {
         let match_count = app.filtered_entries.len();
@@ -753,19 +785,31 @@ fn ui(f: &mut Frame, app: &mut App) {
         );
         let footer = Paragraph::new(text)
             .style(Style::default().fg(Color::Yellow))
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Yellow)));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Yellow)),
+            );
         f.render_widget(footer, chunks[2]);
     } else {
         let entry_idx = app.selected_entry_idx().unwrap_or(0);
         let footer_text = if let Some(entry) = app.entries.get(entry_idx) {
-            format!("📍 Will restore to: {} - {} | / to search | Space for diff", &entry.hash[..7], entry.message)
+            format!(
+                "📍 Will restore to: {} - {} | / to search | Space for diff",
+                &entry.hash[..7],
+                entry.message
+            )
         } else {
             "No entries found".to_string()
         };
 
         let footer = Paragraph::new(footer_text)
             .style(Style::default().fg(Color::Green))
-            .block(Block::default().borders(Borders::ALL).border_style(Style::default().fg(Color::Cyan)));
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Cyan)),
+            );
         f.render_widget(footer, chunks[2]);
     }
 }

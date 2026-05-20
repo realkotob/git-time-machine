@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use std::process::Command;
 use serde::Serialize;
+use std::process::Command;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct GitEntry {
@@ -28,16 +28,14 @@ impl GitManager {
             anyhow::bail!("Not a git repository");
         }
 
-        let repo_path = String::from_utf8(output.stdout)?
-            .trim()
-            .to_string();
+        let repo_path = String::from_utf8(output.stdout)?.trim().to_string();
 
         Ok(Self { repo_path })
     }
 
     pub fn get_reflog_entries(&self, show_all: bool) -> Result<Vec<GitEntry>> {
         let limit = if show_all { "1000" } else { "50" };
-        
+
         let output = Command::new("git")
             .current_dir(&self.repo_path)
             .args([
@@ -64,8 +62,8 @@ impl GitManager {
                 let author = parts[3].to_string();
 
                 if let Ok(timestamp_secs) = timestamp_str.parse::<i64>() {
-                    let timestamp = DateTime::from_timestamp(timestamp_secs, 0)
-                        .unwrap_or_else(|| Utc::now());
+                    let timestamp =
+                        DateTime::from_timestamp(timestamp_secs, 0).unwrap_or_else(Utc::now);
                     let relative_time = Self::format_relative_time(&timestamp);
 
                     entries.push(GitEntry {

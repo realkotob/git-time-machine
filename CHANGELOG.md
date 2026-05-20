@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- Tightened README, CLI, crate, and landing-page language around what reflog-based recovery can and cannot do.
+- Synced documented controls and feature lists with the current `0.3.0` behavior.
+
+## [0.3.0] - 2026-04-10
+
+### Added
+- Search/filter mode for reflog entries.
+- JSON export with `--export-json`.
+- Full diff toggle in the diff panel.
+- Relative/absolute timestamp toggle.
+- Vim-style `gg` and `G` navigation.
+
 ## [0.2.4] - 2026-03-24
 
 ### Added

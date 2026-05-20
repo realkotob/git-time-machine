@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Git Time Machine - Visual Git Reflog Browser</title>
-    <meta name="description" content="A beautiful TUI for browsing and restoring Git history. Navigate your reflog visually, preview changes, and recover lost commits with confidence.">
+    <meta name="description" content="A visual TUI for browsing Git reflog, previewing reachable local history, and restoring deliberately.">
     <style>
         * {
             margin: 0;
@@ -604,8 +604,8 @@
                 <div class="hero-badge">✨ Visual Git Recovery Made Simple</div>
                 <h1>Travel Through<br>Your Git History</h1>
                 <p class="hero-subtitle">
-                    A beautiful terminal interface for browsing git reflog. Navigate your repository's timeline, 
-                    preview changes, and restore lost commits with confidence.
+                    A terminal interface for browsing Git reflog. Navigate reachable local history,
+                    preview changes, and restore deliberately.
                 </p>
                 <div class="cta-buttons">
                     <a href="#install" class="btn btn-primary">
@@ -633,7 +633,7 @@
                 <div class="section-header">
                     <h2 class="section-title">Powerful Yet Simple</h2>
                     <p class="section-subtitle">
-                        Everything you need to navigate and recover your Git history, 
+                        A focused interface to inspect and recover reachable local Git history,
                         wrapped in an intuitive interface.
                     </p>
                 </div>
@@ -651,7 +651,7 @@
                     <div class="feature-card">
                         <div class="feature-icon">🛡️</div>
                         <h3>Safety First</h3>
-                        <p>Confirmation dialogs for destructive operations. Uncommitted changes warnings. Never lose work by accident.</p>
+                        <p>Confirmation dialogs for destructive operations, warnings for uncommitted changes, and previews before restore.</p>
                     </div>
                     <div class="feature-card">
                         <div class="feature-icon">🎨</div>
@@ -676,7 +676,7 @@
             <div class="container">
                 <div class="install-content">
                     <h2 class="section-title">Get Started in Seconds</h2>
-                    <p class="section-subtitle">Install with Cargo and start recovering lost commits immediately</p>
+                    <p class="section-subtitle">Install with Cargo and start inspecting local reflog history</p>
                     
                     <div class="code-block">cargo install git-time-machine</div>
                     
@@ -706,7 +706,7 @@
                 <div class="section-header">
                     <h2 class="section-title">When You Need It Most</h2>
                     <p class="section-subtitle">
-                        Real scenarios where git-time-machine saves the day
+                        Real scenarios where git-time-machine helps you choose a recovery point
                     </p>
                 </div>
                 <div class="use-case-grid">
@@ -714,21 +714,21 @@
                         <div class="use-case-icon">💥</div>
                         <div class="use-case-content">
                             <h3>Recover from Bad Rebase</h3>
-                            <p>Rebased and lost commits? Browse your reflog visually, find the state before the rebase, and restore with one keypress. No cryptic git commands needed.</p>
+                            <p>Rebased and need an earlier local state? Browse your reflog visually, find the state before the rebase, preview it, and restore deliberately.</p>
                         </div>
                     </div>
                     <div class="use-case">
                         <div class="use-case-icon">🔙</div>
                         <div class="use-case-content">
                             <h3>Undo Accidental Reset</h3>
-                            <p>Did git reset --hard and panicked? Time machine shows all your previous states. Preview the diff, confirm it's the right one, and restore your work.</p>
+                            <p>Did git reset --hard and need to go back? Time machine shows recent local reflog states. Preview the diff, confirm the target, and restore.</p>
                         </div>
                     </div>
                     <div class="use-case">
                         <div class="use-case-icon">🌿</div>
                         <div class="use-case-content">
                             <h3>Find Deleted Branches</h3>
-                            <p>Accidentally deleted a branch? Your commits are still in reflog. Navigate through history, find the branch tip, and recover everything.</p>
+                            <p>Accidentally deleted a branch? If the tip is still in your local reflog, navigate through history, find the commit, and recreate the branch manually.</p>
                         </div>
                     </div>
                     <div class="use-case">

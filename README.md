@@ -1,6 +1,6 @@
 # 🕰️ git-time-machine
 
-> **Undo git mistakes in 3 seconds with a TUI**
+> **Browse Git reflog visually and recover reachable local history with a TUI**
 
 `git-time-machine` makes git reflog visual and interactive.
 
@@ -16,12 +16,12 @@
 ## ✨ The Problem
 
 You just:
-- 💥 Accidentally moved HEAD and lost track of your commits
-- 🗑️ Deleted a branch you needed
-- 🤦 Rebased wrong and broke everything
-- 😱 Can't remember what you did 5 minutes ago
+- 💥 Moved HEAD and need to find the previous state
+- 🗑️ Deleted a local branch and need the last reachable commit
+- 🤦 Ran several Git operations and cannot remember the sequence
+- 😱 Need to inspect what changed before choosing a recovery point
 
-**Current solution:** Dig through `git reflog`, copy cryptic hashes, pray you picked the right one.
+**Current solution:** Read through `git reflog`, copy hashes, compare candidates, and run the right Git command manually.
 
 **Better:** `git-time-machine` 🎯
 
@@ -29,7 +29,7 @@ You just:
 
 ![Demo GIF](demo.gif)
 
-*Navigate your git history like a time traveler. One key to restore.*
+*Navigate your local reflog, preview changes, and restore deliberately.*
 
 ## 📦 Installation
 
@@ -45,19 +45,17 @@ cd git-time-machine
 cargo install --path .
 ```
 
-### Homebrew (Coming Soon)
-```bash
-brew install git-time-machine
-```
-
 ## 🎮 Usage
 
 ```bash
 # Launch in any git repository
 git-time-machine
 
-# Show all reflog entries (default: last 50)
+# Show up to 1000 reflog entries (default: last 50)
 git-time-machine --all
+
+# Export the current reflog view as JSON
+git-time-machine --export-json
 ```
 
 ### Controls
@@ -66,15 +64,25 @@ git-time-machine --all
 |-----|--------|
 | `↑` / `k` | Move up |
 | `↓` / `j` | Move down |
-| `Enter` | Restore to selected state |
-| `q` / `Esc` | Quit |
+| `Home` / `End` | Jump to first/last entry |
+| `gg` / `G` | Jump to first/last entry (vim-style) |
+| `PgUp` / `PgDn` | Jump 10 entries |
+| `Space` | Toggle diff panel |
+| `d` | Switch between diff summary and full diff |
+| `t` | Toggle relative/absolute timestamps |
+| `/` | Search/filter commits by message |
+| `Esc` | Clear active filter, or quit if no filter is active |
+| `Enter` | Confirm restore to selected state |
+| `q` | Quit |
 
 ## 🎯 Features
 
-- ✅ **Visual Timeline** - See your entire git history at a glance
+- ✅ **Visual Timeline** - See recent reflog entries at a glance
 - ✅ **Relative Timestamps** - "5m ago", "2h ago", "yesterday"
-- ✅ **One-Key Restore** - Press Enter, done
-- ✅ **Vim Keybindings** - j/k navigation
+- ✅ **Diff Preview** - Compare the selected entry before restoring
+- ✅ **Search/Filter** - Filter commit messages with multi-word search
+- ✅ **JSON Export** - Export the reflog timeline for automation
+- ✅ **Vim Keybindings** - j/k and gg/G navigation
 - ✅ **Beautiful TUI** - Built with Ratatui
 - ✅ **Lightning Fast** - Written in Rust
 - ✅ **Zero Config** - Just works
@@ -91,7 +99,7 @@ git-time-machine --all
 git-time-machine
 # Visually scan the timeline
 # See "2h ago - before I started messing around"
-# Press Enter, back to working state ✨
+# Preview the diff, then press Enter if it is the right state
 ```
 
 **Why not `git reflog`?** You'd need to:
@@ -112,7 +120,7 @@ git-time-machine
 # Scroll through visual timeline
 # See relative timestamps: "15m ago", "1h ago"
 # Find the state you need
-# Press Enter to restore
+# Preview the diff, then press Enter to restore if it is the right state
 ```
 
 **Why not `git reflog | grep`?** You'd need to:
@@ -160,10 +168,17 @@ git-time-machine
 3. Hope you counted right
 4. Manually re-apply commits if you messed up
 
-## ⚠️ What Git-Time-Machine Cannot Fix
+## ⚠️ Recovery Boundaries
 
-- **Uncommitted Changes:** If you haven't committed or stashed your work, the reflog cannot see it. Accidentally running `git clean -fd` or wiping uncommitted files via `git reset --hard` is permanent.
-- **Garbage Collected Commits:** By default, git periodically cleans up unreachable commits. If a commit has been permanently garbage-collected, it is gone forever.
+`git-time-machine` is a reflog browser. It can only help with history that Git can still see locally.
+
+| Situation | Can it help? | Notes |
+|-----------|--------------|-------|
+| You moved `HEAD` with reset, rebase, merge, amend, or checkout | Usually | If the target commit is still in the local reflog, you can inspect and restore it. |
+| You deleted a local branch | Usually | If the branch tip is still reachable from your local reflog, you can find the commit hash and recreate the branch manually. |
+| You force-pushed a remote branch | Sometimes | Only if the commits existed in your local clone before the force-push. It cannot recover commits that were never fetched locally. |
+| You lost uncommitted, unstashed files | No | Git reflog tracks refs, not arbitrary working-tree file contents. |
+| Git garbage-collected the commit | No | If Git has permanently removed the object, this tool cannot bring it back. |
 
 ## 🛠️ How It Works
 
@@ -171,10 +186,10 @@ git-time-machine
 
 1. Parses your reflog history
 2. Displays it in an interactive TUI
-3. Lets you preview and restore any state
+3. Lets you preview and restore reachable local states
 4. Executes `git reset --hard <hash>` when you press Enter
 
-**It's just git under the hood** - no magic, no risk.
+**It's just Git under the hood** - useful, but not magic. The restore action is destructive and should be confirmed only after previewing the target state.
 
 ## 🤔 Why Not Just Use Git Commands?
 
@@ -182,10 +197,10 @@ git-time-machine
 
 | Task | With git commands | With git-time-machine |
 |------|------------------|---------------------|
-| Find state from "before I broke it" | `git reflog`, scan 50+ lines, guess hash, `git reset --hard <hash>`, hope it's right | Scroll, press Enter |
-| Recover a deleted branch's commit hash | `git reflog --all \| grep branch-name`, find hash, `git checkout -b`, verify | `--all` flag, scroll, copy hash |
-| Undo complex operation sequence | Remember exact commands, count commits, pick right reset flag | Visual timeline, click the "before" state |
-| Explore "what if" scenarios | Multiple `git reset` attempts, risk losing more work | Navigate freely, restore is one keypress |
+| Find state from "before I broke it" | `git reflog`, scan 50+ lines, guess hash, `git reset --hard <hash>`, hope it's right | Scroll, preview, confirm |
+| Recover a deleted branch's commit hash | `git reflog`, search manually, find hash, `git checkout -b`, verify | Expanded reflog view, scroll, copy hash |
+| Undo complex operation sequence | Remember exact commands, count commits, pick right reset flag | Visual timeline, select the "before" state |
+| Explore "what if" scenarios | Multiple `git reset` attempts, risk losing more work | Navigate, preview, and confirm from one interface |
 
 **git-time-machine doesn't replace git** - it makes reflog actually usable for humans who:
 - Don't memorize commit hashes
@@ -193,19 +208,19 @@ git-time-machine
 - Want to see their history visually
 - Need to undo mistakes quickly without googling
 
-Think of it as `git reflog` with a UI that doesn't require a PhD.
+Think of it as `git reflog` with a visual interface for recovery decisions.
 
 ## 🤝 Contributing
 
 Contributions welcome!
 
 **Ideas for future versions:**
-- [ ] Show file diffs inline
+- [ ] Safer restore modes: soft reset, mixed reset, checkout preview
 - [ ] "Panic mode" - undo last N minutes
 - [ ] Branch visualization
 - [ ] Stash recovery
-- [ ] Search/filter commits
-- [ ] Export timeline as JSON
+- [ ] Copy selected commit hash to clipboard
+- [ ] True all-ref reflog mode for deleted branch recovery
 
 ## 📝 License
 
