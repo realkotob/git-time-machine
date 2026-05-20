@@ -8,6 +8,7 @@
 - Safer restore modes: hard reset, soft reset, and detached checkout.
 - Backup refs under `refs/git-time-machine/backups/` before hard resets.
 - Confirmation dialog now shows the exact Git command before restore.
+- Project roadmap with near-term recovery work, distribution plans, and explicit non-goals.
 
 ### Changed
 - Tightened README, CLI, crate, and landing-page language around what reflog-based recovery can and cannot do.

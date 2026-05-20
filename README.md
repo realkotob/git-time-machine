@@ -218,7 +218,10 @@ Think of it as `git reflog` with a visual interface for recovery decisions.
 
 Contributions welcome!
 
-**Ideas for future versions:**
+See [ROADMAP.md](ROADMAP.md) for the focused feature plan, recovery boundaries,
+and explicit non-goals.
+
+**Next ideas under active consideration:**
 - [ ] Mixed reset mode
 - [ ] "Panic mode" - undo last N minutes
 - [ ] Branch visualization
