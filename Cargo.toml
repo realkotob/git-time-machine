@@ -1,9 +1,9 @@
 [package]
 name = "git-time-machine"
-version = "0.2.5"
+version = "0.4.0"
 edition = "2021"
 authors = ["Dinakar Sarbada <dinakars777@gmail.com>"]
-description = "🕰️ A beautiful TUI to undo ANY git mistake in 3 seconds"
+description = "🕰️ A visual TUI for browsing Git reflog and restoring reachable local history"
 license = "MIT"
 repository = "https://github.com/dinakars777/git-time-machine"
 keywords = ["git", "tui", "undo", "reflog", "cli"]
@@ -16,6 +16,8 @@ path = "src/main.rs"
 [dependencies]
 ratatui = "0.29"
 crossterm = "0.28"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
