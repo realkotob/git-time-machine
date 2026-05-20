@@ -17,7 +17,7 @@ use ratatui::{
 use std::io;
 
 mod git;
-use git::{GitEntry, GitManager};
+use git::{GitEntry, GitManager, RestoreMode};
 
 #[derive(Parser)]
 #[command(name = "git-time-machine")]
@@ -34,7 +34,9 @@ CONTROLS:\n  \
     Space       Toggle diff panel\n  \
     d           Switch between diff summary and full diff\n  \
     t           Toggle relative/absolute timestamps\n  \
-    Enter       Restore to selected commit\n  \
+    Enter       Hard reset to selected commit (creates backup ref first)\n  \
+    s           Soft reset to selected commit\n  \
+    c           Checkout selected commit (detached HEAD)\n  \
     /           Search/filter commits by message\n  \
     Esc         Clear active filter (or quit if no filter)\n  \
     q           Quit\n\n\
@@ -71,6 +73,14 @@ struct App {
     search_active: bool,
     show_absolute_time: bool,
     last_key_was_g: bool,
+    pending_restore_mode: Option<RestoreMode>,
+}
+
+struct RestoreSummary {
+    hash: String,
+    message: String,
+    mode: RestoreMode,
+    backup_ref: Option<String>,
 }
 
 impl App {
@@ -104,6 +114,7 @@ impl App {
             search_active: false,
             show_absolute_time: false,
             last_key_was_g: false,
+            pending_restore_mode: None,
         })
     }
 
@@ -257,21 +268,30 @@ impl App {
         self.diff_scroll_offset = (self.diff_scroll_offset + 1).min(max_scroll);
     }
 
-    fn show_confirmation_dialog(&mut self) {
+    fn show_confirmation_dialog(&mut self, mode: RestoreMode) {
+        self.pending_restore_mode = Some(mode);
         self.show_confirmation = true;
     }
 
     fn cancel_confirmation(&mut self) {
         self.show_confirmation = false;
+        self.pending_restore_mode = None;
     }
 
-    fn restore_selected(&self) -> Result<Option<(String, String)>> {
+    fn restore_selected(&mut self) -> Result<Option<RestoreSummary>> {
         let Some(idx) = self.selected_entry_idx() else {
             return Ok(None);
         };
         if let Some(entry) = self.entries.get(idx) {
-            self.git_manager.restore_to_commit(&entry.hash)?;
-            Ok(Some((entry.hash[..7].to_string(), entry.message.clone())))
+            let mode = self.pending_restore_mode.unwrap_or(RestoreMode::HardReset);
+            let outcome = self.git_manager.restore_to_commit(&entry.hash, mode)?;
+            self.pending_restore_mode = None;
+            Ok(Some(RestoreSummary {
+                hash: entry.hash[..7].to_string(),
+                message: entry.message.clone(),
+                mode: outcome.mode,
+                backup_ref: outcome.backup_ref,
+            }))
         } else {
             Ok(None)
         }
@@ -313,8 +333,16 @@ fn main() -> Result<()> {
     terminal.show_cursor()?;
 
     match res {
-        Ok(Some((hash, message))) => {
-            println!("✅ Restored to {} - {}", hash, message);
+        Ok(Some(summary)) => {
+            println!(
+                "✅ Completed {} to {} - {}",
+                summary.mode.label(),
+                summary.hash,
+                summary.message
+            );
+            if let Some(backup_ref) = summary.backup_ref {
+                println!("Backup ref: {}", backup_ref);
+            }
             Ok(())
         }
         Ok(None) => Ok(()),
@@ -328,7 +356,7 @@ fn main() -> Result<()> {
 fn run_app<B: ratatui::backend::Backend>(
     terminal: &mut Terminal<B>,
     app: &mut App,
-) -> Result<Option<(String, String)>> {
+) -> Result<Option<RestoreSummary>> {
     loop {
         terminal.draw(|f| ui(f, app))?;
 
@@ -459,7 +487,13 @@ fn run_app<B: ratatui::backend::Backend>(
                         app.show_absolute_time = !app.show_absolute_time;
                     }
                     KeyCode::Enter if app.selected_entry_idx().is_some() => {
-                        app.show_confirmation_dialog();
+                        app.show_confirmation_dialog(RestoreMode::HardReset);
+                    }
+                    KeyCode::Char('s') if app.selected_entry_idx().is_some() => {
+                        app.show_confirmation_dialog(RestoreMode::SoftReset);
+                    }
+                    KeyCode::Char('c') if app.selected_entry_idx().is_some() => {
+                        app.show_confirmation_dialog(RestoreMode::Checkout);
                     }
                     _ => {}
                 }
@@ -475,7 +509,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         .constraints([
             Constraint::Length(3),
             Constraint::Min(0),
-            Constraint::Length(3),
+            Constraint::Length(4),
         ])
         .split(f.area());
 
@@ -487,15 +521,21 @@ fn ui(f: &mut Frame, app: &mut App) {
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                "UNCOMMITTED CHANGES WILL BE LOST",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                "UNCOMMITTED CHANGES DETECTED",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             ),
             Span::raw("  |  "),
             Span::styled("Navigate: ↑↓/jk", Style::default().fg(Color::Gray)),
             Span::raw("  |  "),
             Span::styled("Diff: Space", Style::default().fg(Color::Cyan)),
             Span::raw("  |  "),
-            Span::styled("Restore: Enter", Style::default().fg(Color::Green)),
+            Span::styled("Hard: Enter", Style::default().fg(Color::Red)),
+            Span::raw("  |  "),
+            Span::styled("Soft: s", Style::default().fg(Color::Green)),
+            Span::raw("  |  "),
+            Span::styled("Checkout: c", Style::default().fg(Color::Cyan)),
             Span::raw("  |  "),
             Span::styled("Quit: q", Style::default().fg(Color::Red)),
         ])]
@@ -513,7 +553,11 @@ fn ui(f: &mut Frame, app: &mut App) {
             Span::raw("  |  "),
             Span::styled("Diff: Space", Style::default().fg(Color::Cyan)),
             Span::raw("  |  "),
-            Span::styled("Restore: Enter", Style::default().fg(Color::Green)),
+            Span::styled("Hard: Enter", Style::default().fg(Color::Red)),
+            Span::raw("  |  "),
+            Span::styled("Soft: s", Style::default().fg(Color::Green)),
+            Span::raw("  |  "),
+            Span::styled("Checkout: c", Style::default().fg(Color::Cyan)),
             Span::raw("  |  "),
             Span::styled("Quit: q", Style::default().fg(Color::Red)),
         ])]
@@ -710,20 +754,36 @@ fn ui(f: &mut Frame, app: &mut App) {
     if app.show_confirmation {
         let confirm_text =
             if let Some(entry) = app.selected_entry_idx().and_then(|i| app.entries.get(i)) {
-                if app.has_uncommitted_changes {
-                    format!(
-                    "⚠️  CONFIRM: Reset to {} - {}? This will discard uncommitted changes! [y/N]",
-                    &entry.hash[..7], entry.message
-                )
+                let mode = app.pending_restore_mode.unwrap_or(RestoreMode::HardReset);
+                let note = if mode == RestoreMode::HardReset && app.has_uncommitted_changes {
+                    "Hard reset discards uncommitted changes. A backup ref is created first."
+                } else if mode == RestoreMode::HardReset {
+                    "A backup ref is created before the hard reset."
                 } else {
-                    format!(
-                        "⚠️  CONFIRM: Reset to {} - {}? [y/N]",
+                    "Non-hard restore mode. Confirm only after previewing the target."
+                };
+                vec![
+                    Line::from(vec![
+                        Span::styled(
+                            format!("CONFIRM {}: ", mode.label()),
+                            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            mode.command(&entry.hash),
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]),
+                    Line::from(format!(
+                        "{} - {} | {} [y/N]",
                         &entry.hash[..7],
-                        entry.message
-                    )
-                }
+                        entry.message,
+                        note
+                    )),
+                ]
             } else {
-                "No entry selected".to_string()
+                vec![Line::raw("No entry selected")]
             };
 
         let footer = Paragraph::new(confirm_text)
@@ -779,7 +839,7 @@ fn ui(f: &mut Frame, app: &mut App) {
         let entry_idx = app.selected_entry_idx().unwrap_or(0);
         let footer_text = if let Some(entry) = app.entries.get(entry_idx) {
             format!(
-                "📍 Will restore to: {} - {} | / to search | Space for diff",
+                "📍 Target: {} - {} | Enter hard | s soft | c checkout | / search | Space diff",
                 &entry.hash[..7],
                 entry.message
             )

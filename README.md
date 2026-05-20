@@ -72,7 +72,9 @@ git-time-machine --export-json
 | `t` | Toggle relative/absolute timestamps |
 | `/` | Search/filter commits by message |
 | `Esc` | Clear active filter, or quit if no filter is active |
-| `Enter` | Confirm restore to selected state |
+| `Enter` | Hard reset to selected state after creating a backup ref |
+| `s` | Soft reset to selected state |
+| `c` | Checkout selected state in detached HEAD |
 | `q` | Quit |
 
 ## 🎯 Features
@@ -80,6 +82,7 @@ git-time-machine --export-json
 - ✅ **Visual Timeline** - See recent reflog entries at a glance
 - ✅ **Relative Timestamps** - "5m ago", "2h ago", "yesterday"
 - ✅ **Diff Preview** - Compare the selected entry before restoring
+- ✅ **Safer Restore Modes** - Choose hard reset, soft reset, or detached checkout
 - ✅ **Search/Filter** - Filter commit messages with multi-word search
 - ✅ **JSON Export** - Export the reflog timeline for automation
 - ✅ **Vim Keybindings** - j/k and gg/G navigation
@@ -99,7 +102,7 @@ git-time-machine --export-json
 git-time-machine
 # Visually scan the timeline
 # See "2h ago - before I started messing around"
-# Preview the diff, then press Enter if it is the right state
+# Preview the diff, then choose Enter, s, or c if it is the right state
 ```
 
 **Why not `git reflog`?** You'd need to:
@@ -120,7 +123,7 @@ git-time-machine
 # Scroll through visual timeline
 # See relative timestamps: "15m ago", "1h ago"
 # Find the state you need
-# Preview the diff, then press Enter to restore if it is the right state
+# Preview the diff, then pick hard reset, soft reset, or detached checkout
 ```
 
 **Why not `git reflog | grep`?** You'd need to:
@@ -158,7 +161,7 @@ git-time-machine --all
 # With git-time-machine:
 git-time-machine
 # Find "before I committed to wrong branch"
-# Press Enter
+# Press c to checkout that state safely
 # Cherry-pick the commits to the right branch
 ```
 
@@ -187,9 +190,10 @@ git-time-machine
 1. Parses your reflog history
 2. Displays it in an interactive TUI
 3. Lets you preview and restore reachable local states
-4. Executes `git reset --hard <hash>` when you press Enter
+4. Shows the exact Git command before restore
+5. Runs one of: `git reset --hard <hash>`, `git reset --soft <hash>`, or `git checkout <hash>` (detached HEAD)
 
-**It's just Git under the hood** - useful, but not magic. The restore action is destructive and should be confirmed only after previewing the target state.
+**It's just Git under the hood** - useful, but not magic. Hard reset is destructive, so git-time-machine creates a backup ref under `refs/git-time-machine/backups/` before running it.
 
 ## 🤔 Why Not Just Use Git Commands?
 
@@ -215,7 +219,7 @@ Think of it as `git reflog` with a visual interface for recovery decisions.
 Contributions welcome!
 
 **Ideas for future versions:**
-- [ ] Safer restore modes: soft reset, mixed reset, checkout preview
+- [ ] Mixed reset mode
 - [ ] "Panic mode" - undo last N minutes
 - [ ] Branch visualization
 - [ ] Stash recovery

@@ -16,6 +16,37 @@ pub struct GitManager {
     repo_path: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RestoreMode {
+    HardReset,
+    SoftReset,
+    Checkout,
+}
+
+impl RestoreMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::HardReset => "hard reset",
+            Self::SoftReset => "soft reset",
+            Self::Checkout => "checkout",
+        }
+    }
+
+    pub fn command(self, commit_hash: &str) -> String {
+        match self {
+            Self::HardReset => format!("git reset --hard {commit_hash}"),
+            Self::SoftReset => format!("git reset --soft {commit_hash}"),
+            Self::Checkout => format!("git checkout {commit_hash}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct RestoreOutcome {
+    pub mode: RestoreMode,
+    pub backup_ref: Option<String>,
+}
+
 impl GitManager {
     pub fn new() -> Result<Self> {
         // Check if we're in a git repository
@@ -80,24 +111,36 @@ impl GitManager {
         Ok(entries)
     }
 
-    pub fn restore_to_commit(&self, commit_hash: &str) -> Result<()> {
-        // Validate hash is hex-only to prevent command injection
-        if !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            anyhow::bail!("Invalid commit hash format");
-        }
+    pub fn restore_to_commit(
+        &self,
+        commit_hash: &str,
+        mode: RestoreMode,
+    ) -> Result<RestoreOutcome> {
+        Self::validate_commit_hash(commit_hash)?;
 
+        let backup_ref = if mode == RestoreMode::HardReset {
+            Some(self.create_backup_ref()?)
+        } else {
+            None
+        };
+
+        let args = match mode {
+            RestoreMode::HardReset => vec!["reset", "--hard", commit_hash],
+            RestoreMode::SoftReset => vec!["reset", "--soft", commit_hash],
+            RestoreMode::Checkout => vec!["checkout", commit_hash],
+        };
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args(["reset", "--hard", commit_hash])
+            .args(args)
             .output()
-            .context("Failed to restore to commit")?;
+            .with_context(|| format!("Failed to run {}", mode.command(commit_hash)))?;
 
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
-            anyhow::bail!("Failed to restore: {}", error);
+            anyhow::bail!("Failed to {}: {}", mode.label(), error);
         }
 
-        Ok(())
+        Ok(RestoreOutcome { mode, backup_ref })
     }
 
     pub fn has_uncommitted_changes(&self) -> Result<bool> {
@@ -116,8 +159,7 @@ impl GitManager {
     }
 
     pub fn get_diff_stat(&self, commit_hash: &str) -> Result<String> {
-        // Validate hash is hex-only to prevent command injection
-        if !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        if Self::validate_commit_hash(commit_hash).is_err() {
             return Ok("Invalid commit hash format".to_string());
         }
 
@@ -141,13 +183,13 @@ impl GitManager {
     }
 
     pub fn get_full_diff(&self, commit_hash: &str) -> Result<String> {
-        if !commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        if Self::validate_commit_hash(commit_hash).is_err() {
             return Ok("Invalid commit hash format".to_string());
         }
 
         let output = Command::new("git")
             .current_dir(&self.repo_path)
-            .args(["show", "--no-color", commit_hash])
+            .args(["diff", "--no-color", "HEAD", commit_hash])
             .output()
             .context("Failed to get full diff")?;
 
@@ -158,10 +200,53 @@ impl GitManager {
 
         let diff_output = String::from_utf8(output.stdout)?;
         if diff_output.trim().is_empty() {
-            Ok("No diff available.".to_string())
+            Ok("No changes between current HEAD and selected commit.".to_string())
         } else {
             Ok(diff_output)
         }
+    }
+
+    fn validate_commit_hash(commit_hash: &str) -> Result<()> {
+        if !commit_hash.is_empty() && commit_hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            Ok(())
+        } else {
+            anyhow::bail!("Invalid commit hash format")
+        }
+    }
+
+    fn create_backup_ref(&self) -> Result<String> {
+        let output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .context("Failed to read current HEAD before hard reset")?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to read current HEAD before hard reset: {}", error);
+        }
+
+        let current_head = String::from_utf8(output.stdout)?.trim().to_string();
+        Self::validate_commit_hash(&current_head)?;
+        let short_head = &current_head[..7.min(current_head.len())];
+        let backup_ref = format!(
+            "refs/git-time-machine/backups/{}-{}",
+            Utc::now().timestamp_millis(),
+            short_head
+        );
+
+        let output = Command::new("git")
+            .current_dir(&self.repo_path)
+            .args(["update-ref", &backup_ref, "HEAD"])
+            .output()
+            .context("Failed to create hard-reset backup ref")?;
+
+        if !output.status.success() {
+            let error = String::from_utf8_lossy(&output.stderr);
+            anyhow::bail!("Failed to create hard-reset backup ref: {}", error);
+        }
+
+        Ok(backup_ref)
     }
 
     fn format_relative_time(timestamp: &DateTime<Utc>) -> String {
@@ -322,6 +407,102 @@ mod tests {
     }
 
     #[test]
+    fn get_full_diff_compares_head_to_selected_commit() {
+        let repo = TestRepo::new("full-diff");
+        repo.write_file("first\n");
+        let first_hash = repo.commit("first commit");
+        repo.write_file("second\n");
+        repo.commit("second commit");
+
+        let diff = repo
+            .manager()
+            .get_full_diff(&first_hash)
+            .expect("full diff should load");
+
+        assert!(diff.contains("diff --git"), "full diff was: {diff}");
+        assert!(diff.contains("-second"), "full diff was: {diff}");
+        assert!(diff.contains("+first"), "full diff was: {diff}");
+    }
+
+    #[test]
+    fn hard_reset_creates_backup_ref_before_resetting() {
+        let repo = TestRepo::new("hard-reset");
+        repo.write_file("first\n");
+        let first_hash = repo.commit("first commit");
+        repo.write_file("second\n");
+        let second_hash = repo.commit("second commit");
+
+        let outcome = repo
+            .manager()
+            .restore_to_commit(&first_hash, RestoreMode::HardReset)
+            .expect("hard reset should restore");
+        let backup_ref = outcome
+            .backup_ref
+            .expect("hard reset should create backup ref");
+
+        assert_eq!(outcome.mode, RestoreMode::HardReset);
+        assert_eq!(git(&repo.path, &["rev-parse", "HEAD"]).trim(), first_hash);
+        assert_eq!(
+            git(&repo.path, &["rev-parse", &backup_ref]).trim(),
+            second_hash
+        );
+        assert_eq!(
+            fs::read_to_string(repo.path.join("file.txt"))
+                .expect("file should exist after hard reset"),
+            "first\n"
+        );
+    }
+
+    #[test]
+    fn soft_reset_moves_head_without_changing_worktree() {
+        let repo = TestRepo::new("soft-reset");
+        repo.write_file("first\n");
+        let first_hash = repo.commit("first commit");
+        repo.write_file("second\n");
+        repo.commit("second commit");
+
+        let outcome = repo
+            .manager()
+            .restore_to_commit(&first_hash, RestoreMode::SoftReset)
+            .expect("soft reset should restore");
+
+        assert_eq!(outcome.mode, RestoreMode::SoftReset);
+        assert!(outcome.backup_ref.is_none());
+        assert_eq!(git(&repo.path, &["rev-parse", "HEAD"]).trim(), first_hash);
+        assert_eq!(
+            fs::read_to_string(repo.path.join("file.txt"))
+                .expect("file should exist after soft reset"),
+            "second\n"
+        );
+        assert!(
+            git(&repo.path, &["status", "--porcelain"]).contains("M  file.txt"),
+            "soft reset should leave the newer change staged"
+        );
+    }
+
+    #[test]
+    fn checkout_moves_to_detached_head_without_backup_ref() {
+        let repo = TestRepo::new("checkout");
+        repo.write_file("first\n");
+        let first_hash = repo.commit("first commit");
+        repo.write_file("second\n");
+        repo.commit("second commit");
+
+        let outcome = repo
+            .manager()
+            .restore_to_commit(&first_hash, RestoreMode::Checkout)
+            .expect("checkout should restore");
+
+        assert_eq!(outcome.mode, RestoreMode::Checkout);
+        assert!(outcome.backup_ref.is_none());
+        assert_eq!(git(&repo.path, &["rev-parse", "HEAD"]).trim(), first_hash);
+        assert_eq!(
+            git(&repo.path, &["rev-parse", "--abbrev-ref", "HEAD"]).trim(),
+            "HEAD"
+        );
+    }
+
+    #[test]
     fn invalid_hashes_do_not_run_git_operations() {
         let repo = TestRepo::new("invalid-hashes");
         repo.write_file("first\n");
@@ -329,7 +510,12 @@ mod tests {
 
         let manager = repo.manager();
 
-        assert!(manager.restore_to_commit("HEAD;rm-rf").is_err());
+        assert!(manager
+            .restore_to_commit("HEAD;rm-rf", RestoreMode::HardReset)
+            .is_err());
+        assert!(manager
+            .restore_to_commit("", RestoreMode::HardReset)
+            .is_err());
         assert_eq!(
             manager
                 .get_diff_stat("HEAD;rm-rf")
