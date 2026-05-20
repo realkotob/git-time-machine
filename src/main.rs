@@ -407,28 +407,20 @@ fn run_app<B: ratatui::backend::Backend>(
                             app.previous()?;
                         }
                     }
-                    KeyCode::Char('J') => {
-                        if app.show_diff {
-                            app.scroll_diff_down();
-                        }
+                    KeyCode::Char('J') if app.show_diff => {
+                        app.scroll_diff_down();
                     }
-                    KeyCode::Char('K') => {
-                        if app.show_diff {
-                            app.scroll_diff_up();
-                        }
+                    KeyCode::Char('K') if app.show_diff => {
+                        app.scroll_diff_up();
                     }
-                    KeyCode::Home => {
-                        if !app.filtered_entries.is_empty() {
-                            app.list_state.select(Some(0));
-                            app.update_diff_if_visible()?;
-                        }
+                    KeyCode::Home if !app.filtered_entries.is_empty() => {
+                        app.list_state.select(Some(0));
+                        app.update_diff_if_visible()?;
                     }
-                    KeyCode::End => {
-                        if !app.filtered_entries.is_empty() {
-                            let last = app.filtered_entries.len() - 1;
-                            app.list_state.select(Some(last));
-                            app.update_diff_if_visible()?;
-                        }
+                    KeyCode::End if !app.filtered_entries.is_empty() => {
+                        let last = app.filtered_entries.len() - 1;
+                        app.list_state.select(Some(last));
+                        app.update_diff_if_visible()?;
                     }
                     KeyCode::Char('g') => {
                         if app.last_key_was_g && !app.filtered_entries.is_empty() {
@@ -440,28 +432,22 @@ fn run_app<B: ratatui::backend::Backend>(
                         }
                         continue;
                     }
-                    KeyCode::Char('G') => {
-                        if !app.filtered_entries.is_empty() {
-                            let last = app.filtered_entries.len() - 1;
-                            app.list_state.select(Some(last));
-                            app.update_diff_if_visible()?;
-                        }
+                    KeyCode::Char('G') if !app.filtered_entries.is_empty() => {
+                        let last = app.filtered_entries.len() - 1;
+                        app.list_state.select(Some(last));
+                        app.update_diff_if_visible()?;
                     }
-                    KeyCode::PageDown => {
-                        if !app.filtered_entries.is_empty() {
-                            let current = app.list_state.selected().unwrap_or(0);
-                            let next = (current + 10).min(app.filtered_entries.len() - 1);
-                            app.list_state.select(Some(next));
-                            app.update_diff_if_visible()?;
-                        }
+                    KeyCode::PageDown if !app.filtered_entries.is_empty() => {
+                        let current = app.list_state.selected().unwrap_or(0);
+                        let next = (current + 10).min(app.filtered_entries.len() - 1);
+                        app.list_state.select(Some(next));
+                        app.update_diff_if_visible()?;
                     }
-                    KeyCode::PageUp => {
-                        if !app.filtered_entries.is_empty() {
-                            let current = app.list_state.selected().unwrap_or(0);
-                            let prev = current.saturating_sub(10);
-                            app.list_state.select(Some(prev));
-                            app.update_diff_if_visible()?;
-                        }
+                    KeyCode::PageUp if !app.filtered_entries.is_empty() => {
+                        let current = app.list_state.selected().unwrap_or(0);
+                        let prev = current.saturating_sub(10);
+                        app.list_state.select(Some(prev));
+                        app.update_diff_if_visible()?;
                     }
                     KeyCode::Char(' ') => {
                         app.toggle_diff()?;
@@ -472,10 +458,8 @@ fn run_app<B: ratatui::backend::Backend>(
                     KeyCode::Char('t') => {
                         app.show_absolute_time = !app.show_absolute_time;
                     }
-                    KeyCode::Enter => {
-                        if app.selected_entry_idx().is_some() {
-                            app.show_confirmation_dialog();
-                        }
+                    KeyCode::Enter if app.selected_entry_idx().is_some() => {
+                        app.show_confirmation_dialog();
                     }
                     _ => {}
                 }
