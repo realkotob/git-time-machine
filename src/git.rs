@@ -12,6 +12,12 @@ pub struct GitEntry {
     pub relative_time: String,
 }
 
+impl GitEntry {
+    pub fn short_hash(&self) -> String {
+        self.hash.chars().take(7).collect()
+    }
+}
+
 pub struct GitManager {
     repo_path: String,
 }
@@ -71,6 +77,13 @@ pub struct RestoreOutcome {
 }
 
 impl GitManager {
+    #[cfg(test)]
+    pub fn for_test() -> Self {
+        Self {
+            repo_path: String::new(),
+        }
+    }
+
     pub fn new() -> Result<Self> {
         // Check if we're in a git repository
         let output = Command::new("git")

@@ -8,13 +8,16 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, ListState, Paragraph},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap},
     Frame, Terminal,
 };
-use std::io;
+use std::{
+    io::{self, Write},
+    process::{Command, Stdio},
+};
 
 mod git;
 use git::{BackupRef, GitEntry, GitManager, RestoreMode};
@@ -35,10 +38,12 @@ CONTROLS:\n  \
     Space       Toggle diff panel\n  \
     d           Switch between diff summary and full diff\n  \
     t           Toggle relative/absolute timestamps\n  \
+    y           Copy selected commit hash to clipboard\n  \
+    ?           Show contextual help\n  \
     Enter       Hard reset to selected commit (creates backup ref first)\n  \
     s           Soft reset to selected commit\n  \
     c           Checkout selected commit (detached HEAD)\n  \
-    /           Search/filter commits by message\n  \
+    /           Search/filter commits by message, hash, author, or time\n  \
     Esc         Clear active filter (or quit if no filter)\n  \
     q           Quit\n\n\
 SEARCH MODE:\n  \
@@ -79,6 +84,8 @@ struct App {
     show_absolute_time: bool,
     last_key_was_g: bool,
     pending_restore_mode: Option<RestoreMode>,
+    show_help: bool,
+    status_message: Option<String>,
 }
 
 struct RestoreSummary {
@@ -120,6 +127,8 @@ impl App {
             show_absolute_time: false,
             last_key_was_g: false,
             pending_restore_mode: None,
+            show_help: false,
+            status_message: None,
         })
     }
 
@@ -132,6 +141,11 @@ impl App {
         self.filtered_entries.get(sel).copied()
     }
 
+    fn selected_entry(&self) -> Option<&GitEntry> {
+        self.selected_entry_idx()
+            .and_then(|idx| self.entries.get(idx))
+    }
+
     fn update_filter(&mut self) {
         let query_lower = self.search_query.to_lowercase();
         let tokens: Vec<&str> = query_lower.split_whitespace().collect();
@@ -142,10 +156,7 @@ impl App {
                 .entries
                 .iter()
                 .enumerate()
-                .filter(|(_, e)| {
-                    let msg = e.message.to_lowercase();
-                    tokens.iter().all(|t| msg.contains(t))
-                })
+                .filter(|(_, entry)| entry_matches_query(entry, &tokens))
                 .map(|(i, _)| i)
                 .collect();
         }
@@ -162,10 +173,19 @@ impl App {
         }
     }
 
+    fn set_status_message(&mut self, message: impl Into<String>) {
+        self.status_message = Some(message.into());
+    }
+
+    fn clear_status_message(&mut self) {
+        self.status_message = None;
+    }
+
     fn clear_filter(&mut self) {
         self.search_query.clear();
         self.search_active = false;
         self.search_mode = false;
+        self.clear_status_message();
         self.filtered_entries = (0..self.entries.len()).collect();
         if !self.entries.is_empty() {
             self.list_state.select(Some(0));
@@ -202,6 +222,7 @@ impl App {
             None => 0,
         };
         self.list_state.select(Some(i));
+        self.clear_status_message();
         self.update_diff_if_visible()?;
         Ok(())
     }
@@ -221,11 +242,13 @@ impl App {
             None => 0,
         };
         self.list_state.select(Some(i));
+        self.clear_status_message();
         self.update_diff_if_visible()?;
         Ok(())
     }
 
     fn toggle_diff(&mut self) -> Result<()> {
+        self.clear_status_message();
         self.show_diff = !self.show_diff;
         if self.show_diff {
             self.show_full_diff = false;
@@ -243,6 +266,7 @@ impl App {
         if !self.show_diff {
             return Ok(());
         }
+        self.clear_status_message();
         self.show_full_diff = !self.show_full_diff;
         if self.show_full_diff {
             if let Some(idx) = self.selected_entry_idx() {
@@ -276,6 +300,7 @@ impl App {
     fn show_confirmation_dialog(&mut self, mode: RestoreMode) {
         self.pending_restore_mode = Some(mode);
         self.show_confirmation = true;
+        self.clear_status_message();
     }
 
     fn cancel_confirmation(&mut self) {
@@ -292,7 +317,7 @@ impl App {
             let outcome = self.git_manager.restore_to_commit(&entry.hash, mode)?;
             self.pending_restore_mode = None;
             Ok(Some(RestoreSummary {
-                hash: entry.hash[..7].to_string(),
+                hash: entry.short_hash(),
                 message: entry.message.clone(),
                 mode: outcome.mode,
                 backup_ref: outcome.backup_ref,
@@ -300,6 +325,115 @@ impl App {
         } else {
             Ok(None)
         }
+    }
+
+    fn copy_selected_hash(&mut self) {
+        let Some(hash) = self.selected_entry().map(|entry| entry.hash.clone()) else {
+            self.set_status_message("No commit selected to copy.");
+            return;
+        };
+
+        match copy_to_clipboard(&hash) {
+            Ok(()) => self.set_status_message(format!(
+                "Copied {} to clipboard.",
+                hash.chars().take(7).collect::<String>()
+            )),
+            Err(err) => self.set_status_message(format!(
+                "Could not copy {}: {}",
+                hash.chars().take(7).collect::<String>(),
+                err
+            )),
+        }
+    }
+}
+
+fn entry_matches_query(entry: &GitEntry, tokens: &[&str]) -> bool {
+    tokens.iter().all(|token| {
+        let token = token.to_lowercase();
+        entry.message.to_lowercase().contains(&token)
+            || entry.hash.to_lowercase().contains(&token)
+            || entry.author.to_lowercase().contains(&token)
+            || entry.relative_time.to_lowercase().contains(&token)
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ClipboardCommand {
+    program: &'static str,
+    args: &'static [&'static str],
+}
+
+fn clipboard_commands() -> Vec<ClipboardCommand> {
+    #[cfg(target_os = "macos")]
+    {
+        vec![ClipboardCommand {
+            program: "pbcopy",
+            args: &[],
+        }]
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        vec![ClipboardCommand {
+            program: "clip",
+            args: &[],
+        }]
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        vec![
+            ClipboardCommand {
+                program: "wl-copy",
+                args: &[],
+            },
+            ClipboardCommand {
+                program: "xclip",
+                args: &["-selection", "clipboard"],
+            },
+            ClipboardCommand {
+                program: "xsel",
+                args: &["--clipboard", "--input"],
+            },
+        ]
+    }
+}
+
+fn copy_to_clipboard(text: &str) -> std::result::Result<(), String> {
+    let commands = clipboard_commands();
+    let mut failures = Vec::new();
+
+    for command in commands {
+        match run_clipboard_command(command, text) {
+            Ok(()) => return Ok(()),
+            Err(err) => failures.push(format!("{}: {}", command.program, err)),
+        }
+    }
+
+    if failures.is_empty() {
+        Err("clipboard command is not configured for this platform".to_string())
+    } else {
+        Err(format!("clipboard unavailable ({})", failures.join("; ")))
+    }
+}
+
+fn run_clipboard_command(command: ClipboardCommand, text: &str) -> io::Result<()> {
+    let mut child = Command::new(command.program)
+        .args(command.args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()?;
+
+    if let Some(stdin) = child.stdin.as_mut() {
+        stdin.write_all(text.as_bytes())?;
+    }
+
+    let status = child.wait()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!("exited with {status}")))
     }
 }
 
@@ -401,8 +535,21 @@ fn run_app<B: ratatui::backend::Backend>(
                 continue;
             }
 
+            if app.show_help {
+                match key.code {
+                    KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
+                        app.show_help = false;
+                    }
+                    _ => {}
+                }
+                continue;
+            }
+
             if app.search_mode {
                 match key.code {
+                    KeyCode::Char('?') => {
+                        app.show_help = true;
+                    }
                     KeyCode::Esc => {
                         app.search_mode = false;
                         app.search_query.clear();
@@ -434,6 +581,9 @@ fn run_app<B: ratatui::backend::Backend>(
 
             if app.show_confirmation {
                 match key.code {
+                    KeyCode::Char('?') => {
+                        app.show_help = true;
+                    }
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
                         return app.restore_selected();
                     }
@@ -455,6 +605,10 @@ fn run_app<B: ratatui::backend::Backend>(
                     }
                     KeyCode::Char('/') => {
                         app.search_mode = true;
+                        app.clear_status_message();
+                    }
+                    KeyCode::Char('?') => {
+                        app.show_help = true;
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
                         if app.show_diff && key.modifiers.contains(event::KeyModifiers::SHIFT) {
@@ -478,16 +632,19 @@ fn run_app<B: ratatui::backend::Backend>(
                     }
                     KeyCode::Home if !app.filtered_entries.is_empty() => {
                         app.list_state.select(Some(0));
+                        app.clear_status_message();
                         app.update_diff_if_visible()?;
                     }
                     KeyCode::End if !app.filtered_entries.is_empty() => {
                         let last = app.filtered_entries.len() - 1;
                         app.list_state.select(Some(last));
+                        app.clear_status_message();
                         app.update_diff_if_visible()?;
                     }
                     KeyCode::Char('g') => {
                         if app.last_key_was_g && !app.filtered_entries.is_empty() {
                             app.list_state.select(Some(0));
+                            app.clear_status_message();
                             app.update_diff_if_visible()?;
                             app.last_key_was_g = false;
                         } else {
@@ -498,18 +655,21 @@ fn run_app<B: ratatui::backend::Backend>(
                     KeyCode::Char('G') if !app.filtered_entries.is_empty() => {
                         let last = app.filtered_entries.len() - 1;
                         app.list_state.select(Some(last));
+                        app.clear_status_message();
                         app.update_diff_if_visible()?;
                     }
                     KeyCode::PageDown if !app.filtered_entries.is_empty() => {
                         let current = app.list_state.selected().unwrap_or(0);
                         let next = (current + 10).min(app.filtered_entries.len() - 1);
                         app.list_state.select(Some(next));
+                        app.clear_status_message();
                         app.update_diff_if_visible()?;
                     }
                     KeyCode::PageUp if !app.filtered_entries.is_empty() => {
                         let current = app.list_state.selected().unwrap_or(0);
                         let prev = current.saturating_sub(10);
                         app.list_state.select(Some(prev));
+                        app.clear_status_message();
                         app.update_diff_if_visible()?;
                     }
                     KeyCode::Char(' ') => {
@@ -519,7 +679,11 @@ fn run_app<B: ratatui::backend::Backend>(
                         app.toggle_diff_mode()?;
                     }
                     KeyCode::Char('t') => {
+                        app.clear_status_message();
                         app.show_absolute_time = !app.show_absolute_time;
+                    }
+                    KeyCode::Char('y') => {
+                        app.copy_selected_hash();
                     }
                     KeyCode::Enter if app.selected_entry_idx().is_some() => {
                         app.show_confirmation_dialog(RestoreMode::HardReset);
@@ -566,11 +730,11 @@ fn ui(f: &mut Frame, app: &mut App) {
             Span::raw("  |  "),
             Span::styled("Diff: Space", Style::default().fg(Color::Cyan)),
             Span::raw("  |  "),
-            Span::styled("Hard: Enter", Style::default().fg(Color::Red)),
+            Span::styled("Restore: Enter/s/c", Style::default().fg(Color::Red)),
             Span::raw("  |  "),
-            Span::styled("Soft: s", Style::default().fg(Color::Green)),
+            Span::styled("Copy: y", Style::default().fg(Color::Green)),
             Span::raw("  |  "),
-            Span::styled("Checkout: c", Style::default().fg(Color::Cyan)),
+            Span::styled("Help: ?", Style::default().fg(Color::Cyan)),
             Span::raw("  |  "),
             Span::styled("Quit: q", Style::default().fg(Color::Red)),
         ])]
@@ -588,11 +752,11 @@ fn ui(f: &mut Frame, app: &mut App) {
             Span::raw("  |  "),
             Span::styled("Diff: Space", Style::default().fg(Color::Cyan)),
             Span::raw("  |  "),
-            Span::styled("Hard: Enter", Style::default().fg(Color::Red)),
+            Span::styled("Restore: Enter/s/c", Style::default().fg(Color::Red)),
             Span::raw("  |  "),
-            Span::styled("Soft: s", Style::default().fg(Color::Green)),
+            Span::styled("Copy: y", Style::default().fg(Color::Green)),
             Span::raw("  |  "),
-            Span::styled("Checkout: c", Style::default().fg(Color::Cyan)),
+            Span::styled("Help: ?", Style::default().fg(Color::Cyan)),
             Span::raw("  |  "),
             Span::styled("Quit: q", Style::default().fg(Color::Red)),
         ])]
@@ -666,7 +830,7 @@ fn ui(f: &mut Frame, app: &mut App) {
                     time_style,
                 ),
                 Span::raw("  "),
-                Span::styled(&entry.hash[..7], Style::default().fg(Color::Yellow)),
+                Span::styled(entry.short_hash(), Style::default().fg(Color::Yellow)),
                 Span::raw("  "),
             ];
 
@@ -760,7 +924,7 @@ fn ui(f: &mut Frame, app: &mut App) {
                         .border_style(Style::default().fg(Color::Cyan)),
                 )
                 .scroll((app.diff_scroll_offset, 0))
-                .wrap(ratatui::widgets::Wrap { trim: false });
+                .wrap(Wrap { trim: false });
 
             f.render_widget(diff, diff_area);
         } else {
@@ -779,7 +943,7 @@ fn ui(f: &mut Frame, app: &mut App) {
                 )
                 .style(Style::default().fg(Color::White))
                 .scroll((app.diff_scroll_offset, 0))
-                .wrap(ratatui::widgets::Wrap { trim: false });
+                .wrap(Wrap { trim: false });
 
             f.render_widget(diff, diff_area);
         }
@@ -812,7 +976,7 @@ fn ui(f: &mut Frame, app: &mut App) {
                     ]),
                     Line::from(format!(
                         "{} - {} | {} [y/N]",
-                        &entry.hash[..7],
+                        entry.short_hash(),
                         entry.message,
                         note
                     )),
@@ -849,6 +1013,8 @@ fn ui(f: &mut Frame, app: &mut App) {
             Span::styled("Enter: apply", Style::default().fg(Color::Green)),
             Span::raw("  |  "),
             Span::styled("Esc: cancel", Style::default().fg(Color::Red)),
+            Span::raw("  |  "),
+            Span::styled("?: help", Style::default().fg(Color::Cyan)),
         ]);
         let footer = Paragraph::new(footer_line).block(
             Block::default()
@@ -859,7 +1025,7 @@ fn ui(f: &mut Frame, app: &mut App) {
     } else if app.search_active {
         let match_count = app.filtered_entries.len();
         let text = format!(
-            "🔍 Filtered: {} ({} matches) | / to edit | Esc to clear",
+            "🔍 Filtered: {} ({} matches) | / edit | Esc clear | ? help",
             app.search_query, match_count
         );
         let footer = Paragraph::new(text)
@@ -872,10 +1038,12 @@ fn ui(f: &mut Frame, app: &mut App) {
         f.render_widget(footer, chunks[2]);
     } else {
         let entry_idx = app.selected_entry_idx().unwrap_or(0);
-        let footer_text = if let Some(entry) = app.entries.get(entry_idx) {
+        let footer_text = if let Some(message) = &app.status_message {
+            message.clone()
+        } else if let Some(entry) = app.entries.get(entry_idx) {
             format!(
-                "📍 Target: {} - {} | Enter hard | s soft | c checkout | / search | Space diff",
-                &entry.hash[..7],
+                "📍 Target: {} - {} | Enter hard | s soft | c checkout | y copy | / search | ? help",
+                entry.short_hash(),
                 entry.message
             )
         } else {
@@ -890,5 +1058,156 @@ fn ui(f: &mut Frame, app: &mut App) {
                     .border_style(Style::default().fg(Color::Cyan)),
             );
         f.render_widget(footer, chunks[2]);
+    }
+
+    if app.show_help {
+        render_help_overlay(f, app);
+    }
+}
+
+fn render_help_overlay(f: &mut Frame, app: &App) {
+    let area = centered_rect(76, 72, f.area());
+    let help = Paragraph::new(help_lines(app))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Help (?/Esc/q to close) ")
+                .border_style(Style::default().fg(Color::Cyan)),
+        )
+        .wrap(Wrap { trim: false });
+
+    f.render_widget(Clear, area);
+    f.render_widget(help, area);
+}
+
+fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Percentage(percent_y),
+            Constraint::Percentage((100 - percent_y) / 2),
+        ])
+        .split(area);
+
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(percent_x),
+            Constraint::Percentage((100 - percent_x) / 2),
+        ])
+        .split(vertical[1])[1]
+}
+
+fn help_lines(app: &App) -> Vec<Line<'static>> {
+    let context = if app.show_confirmation {
+        "Confirm restore"
+    } else if app.search_mode {
+        "Search"
+    } else if app.search_active {
+        "Filtered timeline"
+    } else if app.show_full_diff {
+        "Full diff preview"
+    } else if app.show_diff {
+        "Diff summary"
+    } else {
+        "Timeline"
+    };
+
+    vec![
+        Line::from(vec![
+            Span::styled("Context: ", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(context),
+        ]),
+        Line::raw(""),
+        Line::styled("Navigation", Style::default().fg(Color::Cyan)),
+        Line::raw("  ↑/k, ↓/j        Move selection"),
+        Line::raw("  Home/End         Jump to first or last entry"),
+        Line::raw("  gg/G             Vim-style first or last entry"),
+        Line::raw("  PgUp/PgDn        Jump 10 entries"),
+        Line::raw(""),
+        Line::styled("Inspect", Style::default().fg(Color::Cyan)),
+        Line::raw("  Space            Toggle diff panel"),
+        Line::raw("  d                Switch diff summary/full diff"),
+        Line::raw("  Shift+↑↓ or J/K  Scroll diff"),
+        Line::raw("  t                Toggle relative/absolute timestamps"),
+        Line::raw("  /                Search message, hash, author, or time"),
+        Line::raw(""),
+        Line::styled("Recover", Style::default().fg(Color::Cyan)),
+        Line::raw("  Enter            Hard reset after confirmation"),
+        Line::raw("  s                Soft reset after confirmation"),
+        Line::raw("  c                Checkout selected commit detached"),
+        Line::raw("  y                Copy selected commit hash"),
+        Line::raw(""),
+        Line::styled("Safety", Style::default().fg(Color::Yellow)),
+        Line::raw("  Hard reset creates a backup ref first."),
+        Line::raw("  Preview the diff and exact command before confirming a restore."),
+        Line::raw("  Reflog recovery only works for history Git can still see locally."),
+        Line::raw(""),
+        Line::raw(
+            "Esc clears an active filter, closes help, or quits from the unfiltered timeline.",
+        ),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn entry() -> GitEntry {
+        GitEntry {
+            hash: "abcdef1234567890".to_string(),
+            message: "rebase finished: returning to refs/heads/feature".to_string(),
+            timestamp: Utc::now(),
+            author: "Test User".to_string(),
+            relative_time: "2h ago".to_string(),
+        }
+    }
+
+    #[test]
+    fn query_matches_message_hash_author_and_time() {
+        let entry = entry();
+
+        assert!(entry_matches_query(&entry, &["rebase", "feature"]));
+        assert!(entry_matches_query(&entry, &["abcdef1"]));
+        assert!(entry_matches_query(&entry, &["test", "user"]));
+        assert!(entry_matches_query(&entry, &["2h"]));
+        assert!(!entry_matches_query(&entry, &["stash"]));
+    }
+
+    #[test]
+    fn help_mentions_copy_binding() {
+        let lines = help_lines(&App {
+            git_manager: GitManager::for_test(),
+            entries: vec![entry()],
+            list_state: ListState::default(),
+            show_confirmation: false,
+            show_diff: false,
+            show_full_diff: false,
+            diff_content: String::new(),
+            full_diff_content: String::new(),
+            diff_scroll_offset: 0,
+            diff_visible_height: 10,
+            has_uncommitted_changes: false,
+            search_mode: false,
+            search_query: String::new(),
+            filtered_entries: vec![0],
+            search_active: false,
+            show_absolute_time: false,
+            last_key_was_g: false,
+            pending_restore_mode: None,
+            show_help: true,
+            status_message: None,
+        });
+        let help_text = format!("{lines:?}");
+
+        assert!(help_text.contains("Copy selected commit hash"));
+    }
+
+    #[test]
+    fn clipboard_has_platform_candidate() {
+        assert!(!clipboard_commands().is_empty());
     }
 }

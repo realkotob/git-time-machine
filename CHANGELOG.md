@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+- Contextual `?` help overlay for timeline, diff, search, and restore controls.
+- `y` keybinding to copy the selected full commit hash to the clipboard when a platform clipboard command is available.
+
+### Changed
+- Reflog search now matches commit message, hash, author, and relative time instead of commit message only.
+
 ## [0.4.0] - 2026-05-20
 
 ### Added

@@ -31,6 +31,11 @@ Recent work established the foundation for safer iteration:
 - The confirmation dialog shows the exact Git command before a restore.
 - Full diff preview now compares `HEAD` to the selected target, matching restore
   semantics.
+- The TUI has a contextual `?` help overlay for current controls and safety
+  reminders.
+- The selected full commit hash can be copied with `y` when a platform clipboard
+  command is available.
+- Search matches commit message, hash, author, and relative time.
 
 ## Near-Term Work
 
@@ -44,19 +49,6 @@ make them easier to restore from or prune inside the TUI.
 Acceptance criteria:
 - A user can restore from a selected backup ref without copying the ref path.
 - Backup prune behavior is explicit, confirmed, and test-covered.
-
-### Copy selected commit hash
-
-Open issue: [#18](https://github.com/dinakars777/git-time-machine/issues/18)
-
-Add a non-conflicting keybinding for copying the selected commit hash. Since `c`
-now means detached checkout, the copy binding should use another key such as `y`
-or a small command palette if more shortcuts start to collide.
-
-Acceptance criteria:
-- Copying works without changing repository state.
-- The UI confirms what was copied.
-- The behavior is gracefully disabled or explained on unsupported clipboards.
 
 ### Mixed reset mode
 

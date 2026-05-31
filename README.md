@@ -73,7 +73,9 @@ git-time-machine --list-backups
 | `Space` | Toggle diff panel |
 | `d` | Switch between diff summary and full diff |
 | `t` | Toggle relative/absolute timestamps |
-| `/` | Search/filter commits by message |
+| `y` | Copy selected commit hash to clipboard |
+| `?` | Show contextual help |
+| `/` | Search/filter commits by message, hash, author, or time |
 | `Esc` | Clear active filter, or quit if no filter is active |
 | `Enter` | Hard reset to selected state after creating a backup ref |
 | `s` | Soft reset to selected state |
@@ -87,7 +89,9 @@ git-time-machine --list-backups
 - ✅ **Diff Preview** - Compare the selected entry before restoring
 - ✅ **Safer Restore Modes** - Choose hard reset, soft reset, or detached checkout
 - ✅ **Backup Ref Recovery** - List backup refs and exact recovery commands
-- ✅ **Search/Filter** - Filter commit messages with multi-word search
+- ✅ **Copy Commit Hashes** - Copy the selected full hash without changing repository state
+- ✅ **Contextual Help** - Press `?` for the current controls and safety reminders
+- ✅ **Search/Filter** - Filter by message, hash, author, or relative time
 - ✅ **JSON Export** - Export the reflog timeline for automation
 - ✅ **Vim Keybindings** - j/k and gg/G navigation
 - ✅ **Beautiful TUI** - Built with Ratatui
@@ -239,7 +243,6 @@ and explicit non-goals.
 - [ ] "Panic mode" - undo last N minutes
 - [ ] Branch visualization
 - [ ] Stash recovery
-- [ ] Copy selected commit hash to clipboard
 - [ ] True all-ref reflog mode for deleted branch recovery
 
 ## 📝 License
